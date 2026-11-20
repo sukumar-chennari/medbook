@@ -1,0 +1,146 @@
+# Local development stack. Start it with `make up` (see the Makefile).
+# Values like ${MONGO_ROOT_PASSWORD} come from the .env file in the repo root.
+#
+# Ports are bound to 127.0.0.1 so only YOUR machine can reach them,
+# never other devices on your Wi-Fi.
+
+name: medbook
+
+services:
+  # ---------- Data stores ----------
+  mongo:
+    image: mongo:8
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:?set it in .env}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?set it in .env}
+    ports:
+      - '127.0.0.1:27017:27017'
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ['CMD', 'mongosh', '--quiet', '--eval', "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    command:
+      ['redis-server', '--requirepass', '${REDIS_PASSWORD:?set it in .env}', '--appendonly', 'yes']
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    ports:
+      - '127.0.0.1:6379:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD-SHELL', 'redis-cli --no-auth-warning -a "$$REDIS_PASSWORD" ping | grep -q PONG']
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  # TODO(storage): S3-compatible file storage for prescription uploads goes here (needed in
+  # Phase 6). See docs/DECISIONS.md: the official MinIO Docker image is no longer published.
+
+  # ---------- Apps ----------
+  api:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+      target: dev
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      PORT: 4000
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      # "mongo" and "redis" are service names: Docker's internal DNS turns them into IPs.
+      MONGO_URI: mongodb://${MONGO_ROOT_USERNAME}:${MONGO_ROOT_PASSWORD}@mongo:27017/${MONGO_DB_NAME:-medbook}?authSource=admin
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      CORS_ORIGIN: http://localhost:${WEB_PORT:-5173}
+    ports:
+      - '127.0.0.1:${API_PORT:-4000}:4000'
+    volumes:
+      - ../apps/api/src:/repo/apps/api/src
+      - ../apps/api/tests:/repo/apps/api/tests
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO /dev/null http://127.0.0.1:4000/health']
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  worker:
+    build:
+      context: ..
+      dockerfile: apps/worker/Dockerfile
+      target: dev
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+    volumes:
+      - ../apps/worker/src:/repo/apps/worker/src
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # Healthy while the heartbeat file was refreshed in the last 60 seconds.
+      test: ['CMD-SHELL', 'test $$(( $$(date +%s) - $$(stat -c %Y /tmp/worker-healthy) )) -lt 60']
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 20s
+
+  web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+      target: dev
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:${WEB_PORT:-5173}:5173'
+    volumes:
+      - ../apps/web/src:/repo/apps/web/src
+      - ../apps/web/index.html:/repo/apps/web/index.html
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO /dev/null http://127.0.0.1:5173/']
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  # ---------- Dev-only tools ----------
+  mongo-express:
+    image: mongo-express:1
+    restart: unless-stopped
+    environment:
+      ME_CONFIG_MONGODB_URL: mongodb://${MONGO_ROOT_USERNAME}:${MONGO_ROOT_PASSWORD}@mongo:27017/?authSource=admin
+      ME_CONFIG_BASICAUTH_USERNAME: ${MONGO_EXPRESS_USERNAME:-admin}
+      ME_CONFIG_BASICAUTH_PASSWORD: ${MONGO_EXPRESS_PASSWORD:?set it in .env}
+    ports:
+      - '127.0.0.1:8081:8081'
+    depends_on:
+      mongo:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget -qO /dev/null --user "$$ME_CONFIG_BASICAUTH_USERNAME" --password "$$ME_CONFIG_BASICAUTH_PASSWORD" http://127.0.0.1:8081/
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+# Named volumes keep data when containers are removed. `make reset` deletes them.
+volumes:
+  mongo_data:
+  redis_data:

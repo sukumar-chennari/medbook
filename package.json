@@ -1,0 +1,28 @@
+{
+  "name": "medbook",
+  "private": true,
+  "version": "0.1.0",
+  "description": "MedBook: medical appointment and pharmacy platform (portfolio project, synthetic data only)",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.15.0",
+    "globals": "^17.14.0",
+    "prettier": "^3.10.1",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.73.0"
+  }
+}
