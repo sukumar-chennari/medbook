@@ -1,8 +1,10 @@
 import cors from 'cors';
-import express, { type ErrorRequestHandler, type Express } from 'express';
+import express, { type Express } from 'express';
 import helmet from 'helmet';
 import pinoHttp from 'pino-http';
 import type { Logger } from './lib/logger';
+import { errorHandler } from './middleware/error-handler';
+import { authRouter } from './routes/auth';
 import { healthRouter, type HealthChecks } from './routes/health';
 
 export interface AppDeps {
@@ -27,18 +29,13 @@ export function createApp({ logger, corsOrigin, healthChecks }: AppDeps): Expres
   app.use(express.json({ limit: '100kb' }));
 
   app.use('/health', healthRouter(healthChecks));
+  app.use('/auth', authRouter);
 
   app.use((_req, res) => {
     res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Route not found' } });
   });
 
-  // Express 5 sends errors from async handlers here automatically.
-  const onError: ErrorRequestHandler = (err, req, res, next) => {
-    if (res.headersSent) return next(err);
-    req.log.error({ err }, 'unhandled error');
-    res.status(500).json({ error: { code: 'INTERNAL', message: 'Something went wrong' } });
-  };
-  app.use(onError);
+  app.use(errorHandler); // must be last
 
   return app;
 }

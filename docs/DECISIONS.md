@@ -66,3 +66,19 @@ What we chose, why, and the alternative we rejected. Add an entry for every real
 
 - **Chose:** separate `JWT_ACCESS_SECRET` and `JWT_REFRESH_SECRET`, each at least 32 characters, checked by Zod when the API starts.
 - **Why:** leaking one does not compromise the other, and a weak secret stops the server instead of silently weakening security.
+
+## 012. Register: let the database decide on duplicate emails
+
+- **Chose:** try to save, and turn MongoDB's duplicate-key error (code 11000) into a 409 `EMAIL_TAKEN`.
+- **Why:** "check if the email exists, then save" leaves a gap where two simultaneous requests both pass the check. The unique index has no gap. A test fires two registrations at once and expects exactly one 201 and one 409.
+- **Trade-off:** a 409 tells a stranger whether an email is registered (user enumeration). Accepted for friendlier sign-up; login errors will stay vague, and rate limiting (Redis) will slow guessing.
+
+## 013. One error shape for the whole API
+
+- **Chose:** every error is `{ "error": { "code", "message", "details?" } }`, built in `middleware/error-handler.ts` from `ZodError`, `AppError` or unknown errors.
+- **Why:** the web app can switch on `code`, validation errors name fields but never echo values (a value could be a password), and unknown errors return a generic 500 while the real cause goes to the logs.
+
+## 014. Role is never read from the client
+
+- **Chose:** the register schema has no `role` field. Zod drops unknown keys, and the model default (`patient`) applies. Doctors and admins will be created by an admin or the seed script.
+- **Why:** prevents privilege escalation. A test sends `role: "admin"` and expects a patient.
