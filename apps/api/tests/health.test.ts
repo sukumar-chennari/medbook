@@ -2,12 +2,14 @@ import pino from 'pino';
 import request from 'supertest';
 import { createApp } from '../src/app';
 import type { HealthChecks } from '../src/routes/health';
+import { testAuthConfig } from './helpers/config';
 
 function buildApp(healthChecks: HealthChecks) {
   return createApp({
     logger: pino({ level: 'silent' }),
     corsOrigin: 'http://localhost:5173',
     healthChecks,
+    auth: testAuthConfig,
   });
 }
 

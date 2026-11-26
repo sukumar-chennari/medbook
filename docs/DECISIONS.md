@@ -62,7 +62,7 @@ What we chose, why, and the alternative we rejected. Add an entry for every real
 - **Quirk:** the MongoDB driver loads Node's `os` with a dynamic `import()`, which Jest's sandbox cannot do, so the driver sent an empty handshake and the server rejected it. `tests/helpers/db.ts` passes `runtimeAdapters: { os }` to fix it. Tests only, not production code.
 - **Not covered:** Redis-based tests (rate limiter) need a real Redis; they come after Docker works.
 
-## 011. Two JWT secrets, validated at startup
+## 011. JWT secret validated at startup (the second secret was dropped, see 015)
 
 - **Chose:** separate `JWT_ACCESS_SECRET` and `JWT_REFRESH_SECRET`, each at least 32 characters, checked by Zod when the API starts.
 - **Why:** leaking one does not compromise the other, and a weak secret stops the server instead of silently weakening security.
@@ -82,3 +82,20 @@ What we chose, why, and the alternative we rejected. Add an entry for every real
 
 - **Chose:** the register schema has no `role` field. Zod drops unknown keys, and the model default (`patient`) applies. Doctors and admins will be created by an admin or the seed script.
 - **Why:** prevents privilege escalation. A test sends `role: "admin"` and expects a patient.
+
+## 015. Refresh tokens are random values stored hashed in MongoDB (not JWTs, not Redis)
+
+- **Chose:** the refresh token is 32 random bytes. We store its SHA-256 hash in a `refreshtokens` collection (with `userId`, `family`, `expiresAt`, `revokedAt`). A TTL index deletes expired ones automatically. This replaces the second secret from decision 011, so `JWT_REFRESH_SECRET` was removed.
+- **Why:** validity is decided by a database lookup anyway (we need it for rotation and logout), so signing adds nothing. A random token cannot be forged, and a leaked database holds only hashes. Mongo is durable, so a Redis restart cannot log everyone out or un-revoke tokens, and it needs no Docker to test.
+- **Rejected:** a refresh JWT (extra secret and more to explain for no gain); Redis as the store (the brief allows it, but Redis becomes a dependency of login, and we cannot test it yet). Redis stays for rate limiting, and can be revisited for a fast revoked-token check.
+- **Why SHA-256 and not argon2:** the token is long and random, so there is nothing to brute-force. Slow hashing is for human-chosen passwords.
+
+## 016. Login errors are deliberately vague and equally slow
+
+- **Chose:** "no such email" and "wrong password" return the identical 401 `INVALID_CREDENTIALS`, and the server always runs one argon2 check (against a throwaway hash when the email is unknown).
+- **Why:** identical messages stop an attacker learning which emails exist, and equal timing stops them learning it by stopwatch. Registration still reveals duplicates (decision 012), a known trade-off.
+
+## 017. Cookie and token delivery
+
+- **Chose:** access token in the JSON body (kept in memory by the web app, sent as `Authorization: Bearer`); refresh token only in an `httpOnly`, `SameSite=Strict`, `Path=/auth` cookie, `Secure` in production.
+- **Why:** an XSS bug cannot read the refresh token, other sites cannot trigger it, and the browser does not send it on ordinary API calls.

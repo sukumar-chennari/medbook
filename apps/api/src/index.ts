@@ -16,6 +16,12 @@ async function main(): Promise<void> {
     logger,
     corsOrigin: env.CORS_ORIGIN,
     healthChecks: { mongo: pingMongo, redis: () => pingRedis(redis) },
+    auth: {
+      accessSecret: env.JWT_ACCESS_SECRET,
+      accessTtlMinutes: env.ACCESS_TOKEN_TTL_MINUTES,
+      refreshTtlDays: env.REFRESH_TOKEN_TTL_DAYS,
+      secureCookies: env.NODE_ENV === 'production',
+    },
   });
 
   const server = app.listen(env.PORT, () => logger.info({ port: env.PORT }, 'api listening'));
