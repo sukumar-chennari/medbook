@@ -1,8 +1,9 @@
 import argon2 from 'argon2';
 import { AppError } from '../lib/errors';
+import { RefreshToken } from '../models/refresh-token';
 import { User, type UserRole } from '../models/user';
 import type { LoginInput, RegisterInput } from '../schemas/auth';
-import { issueSession, type AuthConfig } from './token.service';
+import { hashToken, issueSession, revokeFamily, type AuthConfig } from './token.service';
 
 // MongoDB reports "this value already exists in a unique index" as error code 11000.
 function isDuplicateKeyError(err: unknown): boolean {
@@ -70,4 +71,55 @@ export async function loginUser({ email, password }: LoginInput, config: AuthCon
 
   const session = await issueSession({ id: user.id as string, role: user.role }, config);
   return { user: toPublicUser(user as unknown as UserLike), ...session };
+}
+
+const INVALID_REFRESH = () =>
+  new AppError(401, 'INVALID_REFRESH_TOKEN', 'Session is no longer valid. Please log in again');
+
+// Swap a refresh token for a fresh pair ("rotation"). Each refresh token works exactly once.
+export async function refreshSession(token: string, config: AuthConfig) {
+  const tokenHash = hashToken(token);
+  const now = new Date();
+
+  // ONE atomic step: "find this token if it is still unused and unexpired, and mark it used."
+  // Because it is a single database operation, if two requests present the same token at the
+  // same moment, only one of them can win. (Same idea as the unique email index.)
+  const claimed = await RefreshToken.findOneAndUpdate(
+    { tokenHash, revokedAt: null, expiresAt: { $gt: now } },
+    { revokedAt: now },
+  );
+
+  if (!claimed) {
+    // It might be unknown, expired, or ALREADY USED. Already-used is the dangerous case:
+    // a legitimate user only ever has the newest token, so an old one coming back means a copy
+    // exists somewhere (stolen). We cancel the whole family, which logs out both the thief
+    // and the real user, who then has to log in again. Safe, and it stops the thief.
+    const existing = await RefreshToken.findOne({ tokenHash });
+    if (existing?.revokedAt) await revokeFamily(existing.family);
+    throw INVALID_REFRESH();
+  }
+
+  // Read the user fresh from the database, so a changed role or a deleted account takes
+  // effect at the next refresh (within 15 minutes) instead of staying frozen in an old token.
+  const user = await User.findById(claimed.userId);
+  if (!user) {
+    await revokeFamily(claimed.family);
+    throw INVALID_REFRESH();
+  }
+
+  // Same family, new token: the chain continues from the one we just used up.
+  const session = await issueSession(
+    { id: user.id as string, role: user.role },
+    config,
+    claimed.family,
+  );
+  return { user: toPublicUser(user as unknown as UserLike), ...session };
+}
+
+// Logout = cancel the refresh token's whole family. Always succeeds quietly,
+// so it never reveals whether a given token was real.
+export async function logoutSession(token: string | undefined): Promise<void> {
+  if (!token) return;
+  const existing = await RefreshToken.findOne({ tokenHash: hashToken(token) });
+  if (existing) await revokeFamily(existing.family);
 }

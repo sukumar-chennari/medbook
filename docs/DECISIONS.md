@@ -99,3 +99,22 @@ What we chose, why, and the alternative we rejected. Add an entry for every real
 
 - **Chose:** access token in the JSON body (kept in memory by the web app, sent as `Authorization: Bearer`); refresh token only in an `httpOnly`, `SameSite=Strict`, `Path=/auth` cookie, `Secure` in production.
 - **Why:** an XSS bug cannot read the refresh token, other sites cannot trigger it, and the browser does not send it on ordinary API calls.
+
+## 018. Refresh rotation with reuse detection
+
+- **Chose:** every refresh token works once. `/auth/refresh` claims it with a single atomic `findOneAndUpdate` (unused and unexpired, mark used), then issues a new token in the same family. If a token that was already used comes back, the whole family is cancelled.
+- **Why:** a real user always holds the newest token, so an old one reappearing means a copy exists. Cancelling the family cuts the thief off (and logs the real user out, who just logs in again). The atomic claim means two simultaneous requests with the same token cannot both win.
+- **Known trade-off:** two browser tabs refreshing in the same instant look like reuse and log the user out. The web app (Phase 3) should refresh from one place. A short "grace window" could be added later if it hurts in practice.
+- **Role and deletion take effect at refresh:** the user is re-read from the database, so a role change or deleted account applies within one access-token lifetime (15 min).
+- **TODO (audit log phase):** record reuse detection as a security event. Today it is silent.
+
+## 019. Logout always answers 204
+
+- **Chose:** logout cancels the token's family and clears the cookie, and succeeds even with no cookie or an unknown token.
+- **Why:** it never reveals whether a token was real, and repeating it is harmless.
+- **Limit to remember:** the current access token still works until it expires (up to 15 min). That is the price of stateless access tokens, and why they are short.
+
+## 020. Retry when the in-memory MongoDB picks a busy port
+
+- **Chose:** `startTestDb` retries up to 5 times.
+- **Why:** parallel test files each start a temporary mongod and occasionally pick the same random port ("Port already in use"). It failed once in a full run, and passed 5 runs in a row after the fix.
