@@ -12,3 +12,12 @@ export const registerSchema = z.object({
 });
 
 export type RegisterInput = z.infer<typeof registerSchema>;
+
+// Login only checks the shape. It does NOT enforce the "8 characters" rule: that rule is for
+// choosing a password, and repeating it here would tell an attacker what passwords are possible.
+export const loginSchema = z.object({
+  email: z.string().trim().toLowerCase().max(254).pipe(z.email('Enter a valid email')),
+  password: z.string().min(1, 'Password is required').max(128),
+});
+
+export type LoginInput = z.infer<typeof loginSchema>;

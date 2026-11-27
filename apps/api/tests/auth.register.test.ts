@@ -3,12 +3,14 @@ import pino from 'pino';
 import request from 'supertest';
 import { createApp } from '../src/app';
 import { User } from '../src/models/user';
+import { testAuthConfig } from './helpers/config';
 import { clearTestDb, DB_START_TIMEOUT_MS, startTestDb, stopTestDb } from './helpers/db';
 
 const app = createApp({
   logger: pino({ level: 'silent' }),
   corsOrigin: 'http://localhost:5173',
   healthChecks: {},
+  auth: testAuthConfig,
 });
 
 beforeAll(async () => {
