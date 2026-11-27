@@ -1,7 +1,14 @@
 import { Router, type CookieOptions, type Response } from 'express';
+import { authenticate } from '../middleware/authenticate';
 import { loginSchema, registerSchema } from '../schemas/auth';
 import { AppError } from '../lib/errors';
-import { loginUser, logoutSession, refreshSession, registerUser } from '../services/auth.service';
+import {
+  getCurrentUser,
+  loginUser,
+  logoutSession,
+  refreshSession,
+  registerUser,
+} from '../services/auth.service';
 import type { AuthConfig } from '../services/token.service';
 
 export const REFRESH_COOKIE = 'refresh_token';
@@ -71,6 +78,12 @@ export function createAuthRouter(config: AuthConfig): Router {
     await logoutSession(typeof token === 'string' ? token : undefined);
     clearRefreshCookie(res);
     res.status(204).end();
+  });
+
+  // GET /auth/me  (needs a valid access token)
+  router.get('/me', authenticate(config), async (req, res) => {
+    const user = await getCurrentUser(req.user!.id);
+    res.json({ user });
   });
 
   return router;
