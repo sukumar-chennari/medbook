@@ -123,3 +123,11 @@ export async function logoutSession(token: string | undefined): Promise<void> {
   const existing = await RefreshToken.findOne({ tokenHash: hashToken(token) });
   if (existing) await revokeFamily(existing.family);
 }
+
+// The logged-in user's own details (used by GET /auth/me).
+export async function getCurrentUser(userId: string) {
+  const user = await User.findById(userId);
+  // The token can outlive the account (up to 15 minutes), so check the user still exists.
+  if (!user) throw new AppError(401, 'USER_NOT_FOUND', 'This account no longer exists');
+  return toPublicUser(user as unknown as UserLike);
+}

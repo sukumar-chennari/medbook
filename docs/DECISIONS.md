@@ -118,3 +118,20 @@ What we chose, why, and the alternative we rejected. Add an entry for every real
 
 - **Chose:** `startTestDb` retries up to 5 times.
 - **Why:** parallel test files each start a temporary mongod and occasionally pick the same random port ("Port already in use"). It failed once in a full run, and passed 5 runs in a row after the fix.
+
+## 021. Access tokens are checked by signature and expiry only, with the algorithm pinned
+
+- **Chose:** `authenticate` verifies the JWT with `algorithms: ['HS256']`, then checks that `sub` is a string and `role` is one of our roles. No database lookup per request.
+- **Why:** this is what makes access tokens fast and the API stateless. Pinning the algorithm blocks "alg: none" and algorithm-swap forgeries; tests cover both, plus a tampered payload and a foreign secret.
+- **Trade-off:** the role inside a token can be up to 15 minutes old (see 018), and a logged-out user's access token works until it expires (see 019). A Redis denylist checked per request would give instant revocation, at the cost of one lookup per request. Not needed yet.
+
+## 022. 401 vs 403, and a separate TOKEN_EXPIRED code
+
+- **Chose:** 401 means "we don't know who you are" (no, bad or expired token); 403 means "we know who you are and this is not allowed". Expiry returns `TOKEN_EXPIRED`, other token problems `INVALID_TOKEN`.
+- **Why:** the web app must react differently: on `TOKEN_EXPIRED` it silently calls `/auth/refresh` and retries; on `INVALID_TOKEN` or 403 it does not.
+
+## 023. requireRole fails closed
+
+- **Chose:** `requireRole` answers 401 if `req.user` is missing, instead of passing the request on.
+- **Why:** if a developer forgets `authenticate` before it, the door stays locked instead of silently open. A test covers it.
+- **Not done yet:** ownership checks ("a patient can only read their own appointments") arrive with appointments in Phase 2.
