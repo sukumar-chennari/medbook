@@ -47,3 +47,22 @@ What we chose, why, and the alternative we rejected. Add an entry for every real
 
 - **Chose:** the worker touches `/tmp/worker-healthy` every 15s while Redis answers; Docker checks the file is under 60s old.
 - **Why:** the worker has no HTTP port, so there is nothing to call. A stale file means "Redis is unreachable or the process is stuck".
+
+## 009. argon2 for password hashing
+
+- **Chose:** `argon2` (argon2id).
+- **Why:** current best practice, memory-hard (expensive for attackers with GPUs), no 72-byte password limit like bcrypt.
+- **Rejected:** `bcrypt` (older, 72-byte limit); `bcryptjs` (pure JS, slower).
+- **Untested:** the Docker (Alpine) install of argon2's prebuilt binary. Verify with `make up` once Docker is set up.
+
+## 010. In-memory MongoDB for tests
+
+- **Chose:** `mongodb-memory-server` starts a real temporary `mongod` per test run (binary cached after the first download).
+- **Why:** tests run without Docker and start from an empty database. It is a real MongoDB, so unique indexes and atomic updates (the double-booking test in Phase 2) behave truly.
+- **Quirk:** the MongoDB driver loads Node's `os` with a dynamic `import()`, which Jest's sandbox cannot do, so the driver sent an empty handshake and the server rejected it. `tests/helpers/db.ts` passes `runtimeAdapters: { os }` to fix it. Tests only, not production code.
+- **Not covered:** Redis-based tests (rate limiter) need a real Redis; they come after Docker works.
+
+## 011. Two JWT secrets, validated at startup
+
+- **Chose:** separate `JWT_ACCESS_SECRET` and `JWT_REFRESH_SECRET`, each at least 32 characters, checked by Zod when the API starts.
+- **Why:** leaking one does not compromise the other, and a weak secret stops the server instead of silently weakening security.

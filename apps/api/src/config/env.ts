@@ -9,6 +9,14 @@ const envSchema = z.object({
   MONGO_URI: z.string().min(1),
   REDIS_URL: z.string().min(1),
   CORS_ORIGIN: z.string().min(1).default('http://localhost:5173'),
+  // Secrets that sign tokens. Two different ones, at least 32 characters each.
+  // If someone learns a secret they can forge tokens, so these never go in git.
+  JWT_ACCESS_SECRET: z.string().min(32),
+  JWT_REFRESH_SECRET: z.string().min(32),
+  // Access token: short life, so a stolen one stops working quickly.
+  ACCESS_TOKEN_TTL_MINUTES: z.coerce.number().int().positive().default(15),
+  // Refresh token: long life, used only to get a new access token.
+  REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(7),
 });
 
 export type Env = z.infer<typeof envSchema>;
