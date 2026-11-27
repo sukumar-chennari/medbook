@@ -6,8 +6,20 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 // and every test run starts from an empty database.
 let server: MongoMemoryServer | undefined;
 
+// Several test files start their own temporary MongoDB at the same time, and two of them can
+// pick the same random port by bad luck ("Port already in use"). If that happens, just try again.
+async function createServerWithRetry(attempts = 5): Promise<MongoMemoryServer> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await MongoMemoryServer.create();
+    } catch (err) {
+      if (attempt >= attempts) throw err;
+    }
+  }
+}
+
 export async function startTestDb(): Promise<void> {
-  server = await MongoMemoryServer.create();
+  server = await createServerWithRetry();
   // The MongoDB driver loads Node's "os" module with a dynamic import(), which Jest's sandbox
   // cannot do. Without this option the driver sends an empty handshake and the server rejects it
   // ("Missing required sub-document 'driver'"). We hand it "os" directly. Tests only.

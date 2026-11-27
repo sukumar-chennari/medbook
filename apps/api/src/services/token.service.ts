@@ -52,3 +52,9 @@ export async function issueSession(
 
   return { accessToken: signAccessToken(user, config), refreshToken, refreshExpiresAt };
 }
+
+// Cancels every refresh token that descends from one login (one "family").
+// Used on logout, and when a token that was already used shows up again.
+export async function revokeFamily(family: string): Promise<void> {
+  await RefreshToken.updateMany({ family, revokedAt: null }, { revokedAt: new Date() });
+}

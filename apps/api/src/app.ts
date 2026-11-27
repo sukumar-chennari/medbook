@@ -1,3 +1,4 @@
+import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import express, { type Express } from 'express';
 import helmet from 'helmet';
@@ -29,6 +30,7 @@ export function createApp({ logger, corsOrigin, healthChecks, auth }: AppDeps): 
     }),
   );
   app.use(express.json({ limit: '100kb' }));
+  app.use(cookieParser()); // fills req.cookies
 
   app.use('/health', healthRouter(healthChecks));
   app.use('/auth', createAuthRouter(auth));
